@@ -958,13 +958,19 @@ func (p *Provider) moveEndpoints() {
 	}
 }
 
-// Preset finds a preset by id, or by an id it carried before
-// (presetAliases), or a partner listed now or before (partners.go).
+// Preset finds a built-in or a cached legacy preset by its ID.
 func Preset(id string) *PresetDef {
 	if pr := builtinPreset(id); pr != nil {
 		return pr
 	}
-	return partnerPreset(id)
+	if !legacyPresetID.MatchString(id) {
+		return nil
+	}
+	if preset := legacyPresets()[id]; preset != nil {
+		copy := *preset
+		return &copy
+	}
+	return nil
 }
 
 // builtinPreset is the preset of that id built into magpie, partners'

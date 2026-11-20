@@ -4674,8 +4674,7 @@ In `~/.cache/magpie`:
 - `models.json` — models.dev catalog (OpenCode's cache at
   `~/.cache/opencode/models.json` is used when present)
 - `models/<provider>.json` — model lists fetched from vendors
-- `partner-counts.json` — partner counts not yet sent (at most
-  14 days)
+- `partners.json` — older installs may have cached presets still used by their configured providers.
 
 `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` are respected.
 
@@ -4702,11 +4701,6 @@ and models to look after first, by magpie's own ids only:
   fine-tune) is only `<provider>/other`; one on a provider of your own is
   only `custom`, a routing group only `group`;
 - how many of each, and how many routing groups you have.
-- for each partner (a sponsor listed first in the add sheet), by its id, how
-  many times a day the add sheet showed it, its row was opened, its key
-  page was opened and a provider was added from it (at most 20 of each,
-  5 adds), kept in `~/.cache/magpie/partner-counts.json` for at most 14
-  days and sent the day after as `magpie partner` events;
 - to usemagpie.ai, not PostHog, which of the plugins Discover lists are
   installed and on (npm names, or `github:owner/repo` for a repository
   tagged `magpie-plugin`; never a folder, a private repository or an
@@ -4732,16 +4726,9 @@ Settings → Privacy → Count me as a user, or with `DO_NOT_TRACK=1` or
 new one at the next send. The [Privacy page](https://usemagpie.ai/docs/privacy)
 shows a whole batch and everything else magpie sends by itself.
 
-Partners are also counted where usemagpie.ai sees them, whatever these
-settings say, as any website sees its visits. The partner list
-(`/api/partners`) gives each partner's website and key page as a
-`https://usemagpie.ai/go/<id>/site|keys[/<region>]` link, which sends a
-`magpie partner go` event (the partner, which link, the region, and the
-country Cloudflare gives) before sending the browser on; and one in ten
-fetches of the list sends a `magpie partners fetch` event with weight 10
-and the country, while a partner is listed. Each event has an id of its
-own: no install id, address or account goes with it. The code is
-[site/worker.js](../site/worker.js).
+An existing provider can still have a saved website or key-page link through
+`usemagpie.ai/go/…`. Opening it in the browser is counted by the website
+before it redirects. The code is [site/worker.js](../site/worker.js).
 
 A plugin's, an import link's and the library's icons sit on hosts their
 authors picked. magpie fetches each through

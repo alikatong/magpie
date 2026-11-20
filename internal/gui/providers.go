@@ -725,27 +725,6 @@ type presetJSON struct {
 	// OwnClient: its requests go as a client of the vendor's own
 	// (provider.OwnClient), whatever User-Agent the agent gave
 	OwnClient bool `json:"ownClient,omitempty"`
-	// a partner's tagline by language, and the languages it is listed in
-	Notes map[string]string `json:"notes,omitempty"`
-	Langs []string          `json:"langs,omitempty"`
-	// New: a partner listed since the add sheet last showed the partners,
-	// and not added; the add button marks it
-	New bool `json:"new,omitempty"`
-}
-
-// pluginPartnerJSON is a plugin's partner as the Plugins page lists it: its
-// package, its name and logo, its tagline by language and the languages
-// it is listed in, and its site (a usemagpie.ai/go link, siteHost the
-// host it sends the browser to).
-type pluginPartnerJSON struct {
-	ID       string            `json:"id"`
-	Name     string            `json:"name"`
-	Plugin   string            `json:"plugin"`
-	Icon     string            `json:"icon,omitempty"`
-	Notes    map[string]string `json:"notes,omitempty"`
-	Langs    []string          `json:"langs,omitempty"`
-	Website  string            `json:"website,omitempty"`
-	SiteHost string            `json:"siteHost,omitempty"`
 }
 
 type gatewayJSON struct {
@@ -840,11 +819,8 @@ type excludedJSON struct {
 type providersJSON struct {
 	Providers []providerJSON `json:"providers"`
 	Presets   []presetJSON   `json:"presets"`
-	// PluginPartners are the partners whose product is a plugin: the
-	// Plugins page lists them first in Discover
-	PluginPartners []pluginPartnerJSON `json:"pluginPartners,omitempty"`
-	Excluded       []excludedJSON      `json:"excluded"` // sign-ins magpie found but will not share
-	Gateway        gatewayJSON         `json:"gateway"`
+	Excluded  []excludedJSON `json:"excluded"` // sign-ins magpie found but will not share
+	Gateway   gatewayJSON    `json:"gateway"`
 	// CodexDaemon is the account Codex's background app-server is still
 	// signed in to after Codex was switched to another; "" when none is
 	// left behind (provider.CodexDaemonStale).
@@ -1571,8 +1547,8 @@ func providersState() providersJSON {
 	// both lists made once at their size: each grown by append was 6 MB of
 	// what forty polls of the Providers page allocated with real accounts
 	s.Providers = make([]providerJSON, 0, len(all))
-	partners, presets := provider.Partners(), provider.Presets()
-	s.Presets = make([]presetJSON, 0, len(partners)+len(presets))
+	presets := provider.Presets()
+	s.Presets = make([]presetJSON, 0, len(presets))
 	for _, p := range all {
 		// a preset is added once any provider is its, whatever its id
 		have[p.ID], have[p.Preset] = true, true
@@ -1592,18 +1568,21 @@ func providersState() providersJSON {
 		}
 		s.Providers = append(s.Providers, info)
 	}
-	// partners first, as the add sheet lists them
-	for _, pa := range partners {
-		s.Presets = append(s.Presets, presetJSON{PresetDef: pa.PresetDef, Added: have[pa.ID], Notes: pa.Notes, Langs: pa.Langs, New: !have[pa.ID] && !provider.PartnerNoticed(pa.ID), OwnClient: presetOwnClient(pa.PresetDef)})
-	}
 	for _, pr := range presets {
 		bases := provider.Provider{Chat: pr.Chat, Responses: pr.Responses, Anthropic: pr.Anthropic}
 		team := provider.TakesZhipuTeam(bases)
 		vendor, keyRegions := presetAccessKey(pr)
 		s.Presets = append(s.Presets, presetJSON{PresetDef: pr, Added: have[pr.ID], ZhipuTeam: team, AccessKey: vendor != "", AccessKeyVendor: vendor, AccessKeyRegions: keyRegions, Vertex: pr.ID == provider.VertexPreset, OwnClient: presetOwnClient(pr)})
 	}
-	for _, pa := range provider.PluginPartners() {
-		s.PluginPartners = append(s.PluginPartners, pluginPartnerJSON{ID: pa.ID, Name: pa.Name, Plugin: pa.Plugin, Icon: pa.Icon, Notes: pa.Notes, Langs: pa.Langs, Website: pa.Website, SiteHost: pa.SiteHost})
+	legacy := map[string]bool{}
+	for _, p := range all {
+		if p.Preset == "" || legacy[p.Preset] {
+			continue
+		}
+		legacy[p.Preset] = true
+		if preset := provider.Preset(p.Preset); preset != nil && preset.Kind == provider.KindPartner {
+			s.Presets = append(s.Presets, presetJSON{PresetDef: *preset, Added: true, OwnClient: presetOwnClient(*preset)})
+		}
 	}
 	cat, models := provider.CatalogGroups()
 	s.Gateway = gatewayJSON{URL: gateway.URL(), OnNetwork: gateway.OnNetwork(), Models: models, Calls: []gateway.Call{}, Groups: []gwGroupJSON{}}
@@ -1695,11 +1674,6 @@ var (
 func moveContext(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Minute)
 }
-
-// sponsorMail is where the Add sheet's "Become a sponsor" writes to, the
-// same address and subject as usemagpie.ai's; /api/open opens this one
-// mailto: link and no other
-const sponsorMail = "mailto:yetoneful@gmail.com?subject=Sponsoring%20magpie"
 
 // appLink hands an app's import link over once something here opens it
 // (agent.OpenAppLink); tests stand in for the system's answer.
@@ -3875,31 +3849,12 @@ func providerRoutes(mux *http.ServeMux, w Windows) {
 		}
 		rw.WriteHeader(http.StatusNoContent)
 	})
-	// the add sheet and the Plugins page count what they showed of the
-	// partners and what was opened of them (provider.CountPartner); only
-	// listed partners count.
-	// Those shown are no longer new (provider.NoticePartners).
-	mux.HandleFunc("POST /api/partner", func(rw http.ResponseWriter, r *http.Request) {
-		var in struct {
-			What string
-			IDs  []string
-		}
-		_ = json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&in)
-		if len(in.IDs) <= provider.MaxPartners {
-			provider.CountPartner(in.What, in.IDs...)
-			if in.What == provider.PartnerShown {
-				provider.NoticePartners(in.IDs...)
-			}
-		}
-		rw.WriteHeader(http.StatusNoContent)
-	})
 	mux.HandleFunc("POST /api/open", func(rw http.ResponseWriter, r *http.Request) {
 		var in struct{ URL string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		// and System Settings' Login Items, where Open at login is allowed
-		// again: that one pane, not System Settings' scheme at large; and
-		// the Add sheet's "Become a sponsor", that one address, not mailto:
-		if in.URL == sponsorMail || strings.HasPrefix(in.URL, "https://") || strings.HasPrefix(in.URL, "http://") || strings.HasPrefix(in.URL, agent.CindyScheme) || strings.HasPrefix(in.URL, agent.LodyScheme) || strings.HasPrefix(in.URL, agent.AionUiScheme) || strings.HasPrefix(in.URL, agent.CherryStudioScheme) || in.URL == autostart.LoginItemsURL {
+		// again: that one pane, not System Settings' scheme at large.
+		if strings.HasPrefix(in.URL, "https://") || strings.HasPrefix(in.URL, "http://") || strings.HasPrefix(in.URL, agent.CindyScheme) || strings.HasPrefix(in.URL, agent.LodyScheme) || strings.HasPrefix(in.URL, agent.AionUiScheme) || strings.HasPrefix(in.URL, agent.CherryStudioScheme) || in.URL == autostart.LoginItemsURL {
 			open := w.OpenURL
 			// an app's import link is handed over only when something
 			// here opens it: the system says nothing when nothing does,

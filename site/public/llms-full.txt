@@ -12185,7 +12185,7 @@ Your prompts, replies, keys and accounts go only to the providers you use; magpi
 | What | Where to | Off by default? | How to stop it |
 | --- | --- | --- | --- |
 | The daily count | PostHog (`us.i.posthog.com`) | On in releases; never in builds from source | Settings → Privacy, `DO_NOT_TRACK=1` |
-| Update checks, release notes, the partner list, icons | `usemagpie.ai` | On | `noAutoUpdate` for update checks; the rest are needed by the app |
+| Update checks, release notes, icons | `usemagpie.ai` | On | `noAutoUpdate` for update checks; the rest are needed by the app |
 | Model catalog and exchange rate | `models.dev`, `open.er-api.com` | On | Not switchable; nothing of yours is sent |
 | OTLP export | A collector you name | Off | Leave it off |
 
@@ -12204,8 +12204,6 @@ Unless you turn that part off, one `magpie uses` event follows for each agent, p
 - **agents.** connected to magpie: `claude`, `codex`. A WSL distro or an omp profile name is cut off (`omp`).
 - **providers.** that are on: a preset’s id (`deepseek`), a subscription’s (`codex`, `copilot`), a known community plugin’s (`plugin:kiro`). A provider you added yourself is only `custom`; any other plugin only `plugin`.
 - **models.** the connected agents are set to, as provider id and vendor model id (`deepseek/deepseek-v4`). On a key’s provider, a model id that [models.dev](https://models.dev) doesn’t list (a local model, a fine-tune) is only `<provider>/other`; a model on your own provider is `custom`; a routing group is `group`.
-
-With them go `magpie partner` events: for each partner listed first in the add sheet, by its id, how many times on a day that has ended the sheet showed it, its row was opened, its key page was opened, and a provider was added from it (`what`: `shown`, `opened`, `keys`, `added`; at most 20 a day each, 5 adds). Counts only, never a provider of your own.
 
 With that part on, magpie also tells `usemagpie.ai`, on the same day, which of the plugins Discover lists are installed and on, so Discover can say how many use each one: `POST /api/plugins/report` with the same random id and the plugins’ npm names, or `github:owner/repo` for a repository tagged `magpie-plugin` (at most 50). A plugin from a folder, a private repository or a package Discover doesn’t list is never named. The same report names the MCP servers in your Library that an agent is given and that the Library’s market lists from what ships with magpie, by their market ids only (`context7`, `io.github.owner/name`; at most 50), so the market can put the most used first; a server of your own, or one found only by a search, is never named, nor its address, command or keys. A like on a plugin’s page goes as `POST /api/plugins/like` with the id, the plugin and whether it is on, and only for a plugin installed here; the plugins you liked are kept in `plugin-likes.json`. The site counts the ids that reported a plugin in the last 7 days, drops a report after 30 days, and keeps your address only hashed, for an hour, to limit how often it is asked. Discover reads the counts from `GET /api/plugins/stats`, which carries no id. The code is [internal/stats/plugins.go](https://github.com/yetone/magpie/blob/main/internal/stats/plugins.go) and [site/pluginstats.js](https://github.com/yetone/magpie/blob/main/site/pluginstats.js).
 
@@ -12228,14 +12226,12 @@ Every event carries `$process_person_profile: false`, so PostHog keeps no person
     { "event": "magpie uses", "distinct_id": "3f9c…", "timestamp": "2026-10-13T08:00:00Z",
       "properties": { "kind": "agent", "id": "claude", "$process_person_profile": false, "distinct_id": "3f9c…" } },
     { "event": "magpie uses", "properties": { "kind": "provider", "id": "custom", … } },
-    { "event": "magpie uses", "properties": { "kind": "model", "id": "deepseek/deepseek-v4", … } },
-    { "event": "magpie partner", "timestamp": "2026-10-12T12:00:00Z",
-      "properties": { "id": "<partner id>", "what": "shown", "count": 3, "day": "2026-10-12", … } }
+    { "event": "magpie uses", "properties": { "kind": "model", "id": "deepseek/deepseek-v4", … } }
   ]
 }
 ```
 
-The `api_key` is the project’s PostHog key; it can only send events, not read them. The code is [internal/stats](https://github.com/yetone/magpie/blob/main/internal/stats/stats.go) and [partner_events.go](https://github.com/yetone/magpie/blob/main/internal/provider/partner_events.go).
+The `api_key` is the project’s PostHog key for sending events. See [internal/stats](https://github.com/yetone/magpie/blob/main/internal/stats/stats.go).
 
 ## Turning it off
 
@@ -12243,7 +12239,7 @@ Each of these switches stops part or all of it:
 
 - Settings → Privacy → Count me as a user off, or `"noStats": true` in `settings.json` stops the whole daily count.
 - `DO_NOT_TRACK=1` or `MAGPIE_NO_STATS=1` in magpie’s environment (any value but empty, `0` or `false`) stops the whole daily count, whatever the settings say.
-- Settings → Privacy → Share the agents, providers, models and plugins I use off, or `"noUsageStats": true` leaves out the `magpie uses` and `magpie partner` events, the counts in `magpie active` and the plugin report; the id, version and system are still sent. Partner counts stop being kept too.
+- Settings → Privacy → Share the agents, providers, models and plugins I use off, or `"noUsageStats": true` leaves out `magpie uses` events, the counts in `magpie active` and the plugin report. The id, version and system are still sent.
 - Settings → About → Automatic updates off, or `"noAutoUpdate": true` stops magpie asking `usemagpie.ai` for a newer version by itself (it asks every 6 hours otherwise). This is not part of the count.
 
 A change in Settings takes effect at the next hourly look; no restart is needed. `settings.json` sits in magpie’s folder (see below):
@@ -12265,9 +12261,8 @@ A change in Settings takes effect at the next hourly look; no restart is needed.
 | `install-id` | The random id, made the first time the count is sent |
 | `stats-sent` | The last day (UTC) the count went, so a day is sent once |
 | `plugin-likes.json` | The plugins you liked in Discover |
-| `partner-counts.json` (in the cache folder) | Partner counts not yet sent, at most 14 days |
 
-`install-id` and `stats-sent` are in magpie’s folder: `~/.config/magpie` on macOS and Linux, `%USERPROFILE%\.config\magpie` on Windows, `$XDG_CONFIG_HOME/magpie` when that is set, and the data folder of a portable magpie. `partner-counts.json` is in `~/.cache/magpie` (`$XDG_CACHE_HOME/magpie`, or `cache` in a portable magpie’s data folder). You can delete any of them: a deleted `install-id` is replaced by a new random one at the next send, so you are counted as a new user; with the count off, none of them is written again.
+`install-id` and `stats-sent` are in magpie’s folder (`~/.config/magpie` on macOS and Linux, `%USERPROFILE%\.config\magpie` on Windows, `$XDG_CONFIG_HOME/magpie` when set, or the data folder of a portable magpie). If you delete `install-id`, the next send generates a new random id and counts you as a new user.
 
 The request archive (the Request archive switch on the Usage page, above the list of requests) is **off by default**. Turned on while sync has no S3 bucket, it keeps each gateway call’s headers and bodies, secrets masked as for the S3 archive, in `request-archive` in magpie’s folder, one file per call, readable by your user only. It grows to 1 GiB (`requestArchiveLocalMB` in settings.json) and the oldest calls are removed past that. The switch is this computer’s own: sync never turns it on at another computer. With an S3 bucket the calls go to the bucket instead, kept to 1 GiB there too (`requestArchiveMB`), the oldest removed past it, and nothing is written here. Delete the folder whenever you like.
 
@@ -12279,8 +12274,7 @@ magpie asks its own site for a few things, whatever the privacy settings say, as
 
 - `/api/latest`: the update feed, every 6 hours unless `noAutoUpdate` is on, with `?lang=` for the notes in your language, and `?channel=stable` or `?channel=daily` when Settings → About → Update channel is Stable or Daily; a fresh install asks `?channel=stable` once too, to stay on Stable when it is Stable’s version. Neither says who you are. `/api/notes` gives What’s new after an update.
 - `/files/<version>/<file>`: the release files an update and the installer download, served from Cloudflare R2. A file the site doesn’t hold is sent on to github.com. Nothing is counted.
-- `/api/partners`: the add sheet’s partner list, every 6 hours. One fetch in ten is counted as a `magpie partners fetch` event, with the country Cloudflare gives, while a partner is listed.
-- `/go/<partner>/site` and `/go/<partner>/keys`: a partner’s website and key-page links, opened in your browser, are counted (the partner, which link, a region, a country) as `magpie partner go` before you are sent on.
+- Saved `/go/<partner>/site` and `/go/<partner>/keys` links opened in your browser are counted (the partner, which link, a region, a country) as `magpie partner go` before redirecting.
 - `/api/plugins/stats`: Discover’s counts of how many use and like each plugin, and the Library market’s of how many use each MCP server, at most once an hour. It carries no id; the plugin report and likes do, and go only with sharing what you use on.
 - `/api/icon?url=…`: icons named by a plugin, an import link or the library are fetched through it, so their hosts see Cloudflare’s address, not yours. The worker passes the picture on and counts and keeps nothing.
 

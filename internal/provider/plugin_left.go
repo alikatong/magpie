@@ -131,14 +131,7 @@ func takeBackLeft(spec string) error {
 // AddPlugin installs the plugin spec, as plugin.Add does, and puts back
 // what was set aside of it when it was last removed.
 func AddPlugin(ctx context.Context, spec string) (plugin.Entry, error) {
-	e, err := addPluginWith(ctx, spec, addPlugin)
-	if err == nil {
-		// a partner's plugin installed counts for it, as a provider added
-		// from a partner does (partner_events.go); one carried over from a
-		// backup (AddPlugins) is no new install
-		countPluginPartner(plugin.Name(e.Spec))
-	}
-	return e, err
+	return addPluginWith(ctx, spec, addPlugin)
 }
 
 // addPluginWith is AddPlugin, installing with add: plugin.Add for a name

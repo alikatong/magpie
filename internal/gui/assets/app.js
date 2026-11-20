@@ -96,11 +96,6 @@ let advanced = null; // { of, open }: the editor's Advanced as it was opened or 
 // what the editor edits (editing), not its draft: a move to the plugin or a
 // refresh made under it starts a new draft, and the fold stays as left
 let adding = false; // the preset sheet is open
-// the partners counted as shown since the sheet opened: once an opening,
-// however often it is drawn (countPartner)
-let partnersCounted = null;
-// the Partners heading's light has run since the sheet opened (shinePartners)
-let partnersShone = false;
 // a magpie://import link waiting for a yes: { provider, error, replaces }
 let importing = null;
 let importingApps = null; // the Import from other apps dialog: { sources, picks }
@@ -297,7 +292,6 @@ const CROSS = "M4.5 4.5l7 7M11.5 4.5l-7 7";
 const PLUS = "M8 3.5v9M3.5 8h9";
 const HEART = "M8 13.2S2.5 9.9 2.5 6.1A2.8 2.8 0 0 1 8 5a2.8 2.8 0 0 1 5.5 1.1C13.5 9.9 8 13.2 8 13.2Z";
 // internal/gui/providers.go's sponsorMail, the one mailto: /api/open opens
-const SPONSOR_MAIL = "mailto:yetoneful@gmail.com?subject=Sponsoring%20magpie";
 const OUT = "M6.5 3.5h-3v9h9v-3M9 3.5h3.5V7M12.5 3.5 7.5 8.5";
 const PLAY_ICON = "M5.5 3.75v8.5L12.25 8z";
 const COPY_ICON = "M5.5 5.5V3.5h7v7h-2M3.5 5.5h7v7h-7z";
@@ -6013,7 +6007,6 @@ function prefetchProviders() {
   const e = providersEarly = { read: api("providers") };
   e.read.then((s) => {
     e.got = s;
-    markNewPartners();
     if (state?.agents?.some((a) => !a.wired && (a.id === "claude" || a.id === "codex"))) renderAgents();
   }, () => { if (providersEarly === e) providersEarly = null; });
 }
@@ -6084,7 +6077,7 @@ async function loadProvidersNow() {
     magpie.call(view, "render", was);
     backAfterLoad($("#view-" + view));
   // under Routing: drawn when opened (#4652)
-  } else if (rtView(view)) { providersBehind = true; markNewPartners(); }
+  } else if (rtView(view)) providersBehind = true;
   else renderProviders();
   renderArchive();
   providersWhileFetching();
@@ -6229,7 +6222,6 @@ function renderProviders(quiet) {
   providersBehind = false;
   // a rebuild clamps the scroll to the top: put it back
   const view = $("#view-providers"), top = view.scrollTop;
-  markNewPartners();
   keepIcons($("#providers"), $("#offProviders"), $("#addSheet"), $("#excluded"));
   view.classList.remove("loading");
   view.removeAttribute("aria-busy");
@@ -7226,29 +7218,6 @@ function pickForAgent(a, p, btn, ev) {
   openPicker(agent, field, btn, ev, (o) => pre.test(o.value));
 }
 
-// shinePartners: a hairline of light runs once round the Partners heading
-// and, at the same time, round its tiles, when the sheet opens, as the
-// reader reaches it (the owner picked it, of three; 标题跟这一块要一起播放).
-// Once an opening: a search or a reload drawing it again doesn't.
-function shinePartners(k, grid) {
-  if (partnersShone || calm()) return;
-  for (const x of [k, grid]) {
-    x.classList.add("shine");
-    x.append(el("i", "glow"), el("i", "ring"));
-  }
-  const seen = new IntersectionObserver(([en]) => {
-    // a redraw's new heading takes over from this one
-    if (!k.isConnected) return seen.disconnect();
-    if (!en.isIntersecting || !adding) return;
-    seen.disconnect();
-    if (partnersShone) return;
-    partnersShone = true;
-    k.classList.add("lit");
-    grid.classList.add("lit");
-  }, { root: $("#view-providers"), threshold: 1 });
-  seen.observe(k);
-}
-
 // The add sheet: presets, and a custom provider beside its search (jackutan on X).
 let presetQuery = "", addReturnPick = null;
 function renderAdd() {
@@ -7269,7 +7238,6 @@ function renderAdd() {
     setRoom(view, 0);
   }
   sheet.hidden = !adding;
-  if (!adding) { partnersCounted = null; partnersShone = false; }
   // Duplicate and Add another open a new provider's editor with no sheet
   if (!adding) return editing && typeof editing === "object" ? renderEditor(null, editing.preset) : null;
   const head = el("div", "row-head");
@@ -7330,36 +7298,6 @@ function renderAdd() {
     const named = (x) => !f || x.name.toLowerCase().includes(f) || x.agent.includes(f) || "subscription".includes(f);
     const subs = SUBS.filter((x) => !(replacedSub(x.agent) || unusedSub(x.agent)) || signing?.agent === x.agent).map((x) => subOf(x.agent)).filter(named);
     const inPlugins = f && SUBS.some((x) => unusedSub(x.agent) && signing?.agent !== x.agent && named(subOf(x.agent)));
-    // partners pay to be listed first, under a heading that says so; who
-    // they are comes from usemagpie.ai (internal/provider/partners.go), and
-    // each may name the languages it is shown in
-    const partners = providers.presets.filter((p) => p.kind === "partner" && partnerShown(p) && (hit(p) || partnerNote(p).toLowerCase().includes(f)));
-    if (partners.length) {
-      any = true;
-      const grid = section("Partners", "magpie's sponsors");
-      const k = grid.previousElementSibling;
-      // the heading's row ends in the way to join them, the address
-      // usemagpie.ai's own "Become a sponsor" writes to
-      const head = el("div", "kind-row");
-      const join = el("button", "sponsor-me");
-      join.type = "button";
-      join.append(svg(HEART, 12, 1.4), el("span", "", t("Become a sponsor")));
-      join.onclick = () => (web ? (location.href = SPONSOR_MAIL) : api("open", { url: SPONSOR_MAIL }));
-      k.replaceWith(head);
-      head.append(k, join);
-      shinePartners(k, grid);
-      // a new one's tile keeps a dot until opened (partnerTile)
-      newPartnerTiles ??= new Set();
-      for (const p of partners) if (p.new && !p.added) newPartnerTiles.add(p.id);
-      for (const pr of partners) grid.append(partnerTile(pr));
-      partnersCounted ??= new Set();
-      const fresh = partners.filter((p) => !partnersCounted.has(p.id));
-      for (const p of fresh) partnersCounted.add(p.id);
-      countPartner("shown", fresh.map((p) => p.id));
-      // shown, they are new no more (provider.NoticePartners)
-      for (const p of partners) p.new = false;
-      markNewPartners();
-    }
     if (subs.length || inPlugins) {
       any = true;
       const grid = section("Subscriptions", "sign in, no key");
@@ -7573,83 +7511,6 @@ function tile(pr) {
 }
 
 // the page's language and its base ("zh-TW", "zh")
-function pageLangs() {
-  const l = document.documentElement.lang || "en";
-  return [l, l.split("-")[0]];
-}
-
-// a partner listed in no language of its own is listed in every one
-function partnerShown(pr) {
-  return !pr.langs?.length || pageLangs().some((l) => pr.langs.includes(l));
-}
-
-// the partner's tagline in the page's language, else its English one; the
-// partner writes it, so it isn't translated here
-function partnerNote(pr) {
-  const n = pr.notes || {};
-  for (const l of pageLangs()) if (n[l]) return n[l];
-  return n.en || "";
-}
-
-// countPartner counts what for partners (provider.CountPartner): magpie
-// counts them only when the stats are on, and nothing waits on it
-function countPartner(what, ids) {
-  if (ids.length) api("partner", { what, ids }).catch(() => {});
-}
-
-// a partner listed since the add sheet last showed the partners puts a
-// small dot on the add button, its name in the button's title, until the
-// sheet shows it (yetone: 有了新的合作伙伴的时候…提醒吸引用户点击查看),
-// and a still one on Providers in the nav, as Plugins has for an update
-// (yetone: 侧边栏…不要太打扰用户)
-function markNewPartners() {
-  const list = providers || providersEarly?.got;
-  const fresh = adding ? [] : (list?.presets || []).filter((p) => p.kind === "partner" && p.new && !p.added && partnerShown(p));
-  const title = fresh.length ? t("New in Partners: {names}", { names: fresh.map((p) => p.name).join(", ") }) : "";
-  const nav = mode === "window" && document.querySelector('#nav button[data-view="providers"]');
-  for (const [b, cls] of [[$("#addProvider"), "has-new"], [nav, "has-dot"]]) {
-    if (!b) continue;
-    b.classList.toggle(cls, fresh.length > 0);
-    if (title) b.title = title;
-    else b.removeAttribute("title");
-  }
-}
-
-// partners new when the sheet showed them, each dotted until opened, this
-// run; a dot scales in once
-let newPartnerTiles = null;
-const newPartnerDotsIn = new Set();
-
-// a partner's row: its own section says it is sponsored, so no badge; its
-// tagline goes on a quiet line under the name, where it is read, not only
-// in the title (yetone: 上 A 方案)
-function partnerTile(pr) {
-  const b = tile({ ...pr, sponsored: false, note: "" });
-  const note = partnerNote(pr);
-  if (note) {
-    const n = b.querySelector(".nm .n");
-    const col = el("span", "col");
-    n.replaceWith(col);
-    col.append(n, el("span", "sub", note));
-    b.classList.add("two");
-  }
-  if (!pr.added) {
-    const open = b.onclick;
-    b.onclick = (e) => { newPartnerTiles?.delete(pr.id); countPartner("opened", [pr.id]); open(e); };
-  }
-  if (!pr.added && newPartnerTiles?.has(pr.id)) {
-    const d = el("span", "new-dot" + (newPartnerDotsIn.has(pr.id) ? "" : " in"));
-    newPartnerDotsIn.add(pr.id);
-    // a hidden dot's animation starts over when shown again
-    d.addEventListener("animationend", (e) => { if (e.animationName === "new-dot-ring") d.classList.remove("in"); });
-    d.setAttribute("role", "img");
-    d.setAttribute("aria-label", t("New"));
-    b.querySelector(".nm").append(d);
-  }
-  if (!pr.added) b.title = pr.name + (partnerNote(pr) ? " · " + partnerNote(pr) : "") + "\n" + hostOf(pr.chat || pr.responses || pr.anthropic);
-  return b;
-}
-
 let fieldIDs = 0;
 // A hint explains the field: where a pointer can rest (a mouse), app.css
 // keeps it out of sight and settingshints.js shows it in a card on
@@ -9538,7 +9399,7 @@ function drawEditor(p, presetID) {
     const h = el("div", "ehead");
     const copyOf = draft.copyOf && providers.providers.find((x) => x.id === draft.copyOf);
     h.append(icon(p?.icon || (copyOf && draft.icon) || pr?.icon || "generic"), el("b", "", p ? p.name : copyOf ? t("Copy of {name}", { name: copyOf.name }) : pr ? pr.name : t("Custom provider")));
-    if (pr?.kind === "partner") { if (partnerNote(pr)) h.append(el("span", "note", partnerNote(pr))); } else if (pr?.note) h.append(el("span", "note", t(pr.note)));
+    if (pr?.note && pr.kind !== "partner") h.append(el("span", "note", t(pr.note)));
     h.append(el("span", "grow"));
     // a region's own page (Tencent Cloud's), following the region picked
     // below; a partner's /go link is named by where it goes (siteHost)
@@ -9978,10 +9839,7 @@ function drawEditor(p, presetID) {
   // endpoints, and one without falls back to the preset's own page
   if (keysUrl) {
     const b = el("button", "link", t("Get a key ↗"));
-    b.onclick = () => {
-      if (pr?.kind === "partner") countPartner("keys", [pr.id]);
-      api("open", { url: draft?.keysUrl || pr?.keysUrl || p?.keysUrl });
-    };
+    b.onclick = () => api("open", { url: draft?.keysUrl || pr?.keysUrl || p?.keysUrl });
     side.append(b);
   }
   const keyWrap = el("div", "pair");
