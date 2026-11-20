@@ -115,7 +115,7 @@ const favoriteKey = (o) => o.ref || o.value;
 const isFavorite = (o) => modelFavorites.has(favoriteKey(o)) || modelFavorites.has(o.value);
 
 // The reads the page asks for again and again and mostly finds the same
-// (writeJSONSame in api.go): the tag of the answer last read goes with the
+// (writeSame in api.go): the tag of the answer last read goes with the
 // next ask, and an answer that is the same comes back with no body and is
 // the object read before. The Sessions tab's ~8 MB list was read, parsed and
 // compared every 15 s over a long history.

@@ -121,9 +121,6 @@ func runSearch(ctx context.Context, params map[string]any) ([]SearchPage, error)
 // plugin: provider.SearchVendorOf reads it, which mustn't start the host.
 func searchesPath() string { return filepath.Join(settings.Dir(), "plugin-searches.json") }
 
-// SearchesPath is the note NotedSearches reads.
-func SearchesPath() string { return searchesPath() }
-
 var searchesMu sync.Mutex
 
 // noteSearches notes which plugins the host loaded give search APIs,

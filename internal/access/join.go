@@ -63,14 +63,6 @@ func JoinOn() bool {
 	return ok
 }
 
-// JoinSince is when the join password was set; zero when none is.
-func JoinSince() time.Time {
-	joinMu.Lock()
-	defer joinMu.Unlock()
-	f, _ := readJoin()
-	return f.Set
-}
-
 // SetJoinPassword sets the join password, or with "" clears it, which
 // closes the join page. Keys already given out stay until each is removed
 // in Gateway keys.
