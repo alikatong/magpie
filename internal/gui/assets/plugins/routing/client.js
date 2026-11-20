@@ -9972,22 +9972,15 @@ function routingPage(part) {
     asked.append(icon(ag?.icon || "generic"), el("span", "pr-who", callerName(r)), el("code", "m", r.model));
     asked.append(...rowTags(r));
     const when = el("span", "at", new Date(r.time).toLocaleTimeString(intlLang(), { hour: "2-digit", minute: "2-digit", second: "2-digit", ...hourClock() }));
-    // where it went: the provider, the account or key, and the model that
-    // answered — marked when the reply names another than the one sent
     const to = el("span", "pr-to");
     to.append(el("i", "", "→"));
-    const place = w ? where(w) : r.provider;
+    const place = w?.name || w?.provider || r.provider;
     if (!r.done) to.append(el("span", "pr-where", w ? t("{who} is answering…", { who: place }) : waitWord(r)));
     else if (noAnswer(how)) {
       const last = r.tries[r.tries.length - 1];
       to.append(el("span", "pr-where", last ? endWord(r, last) : `${r.status || ""} ${r.error || ""}`.trim()));
     } else {
       to.append(el("span", "pr-where", place));
-      const model = tr?.model || w?.model;
-      if (model) to.append(el("span", "pr-m", model));
-      if (tr?.swapped && tr.done) to.append(swapTag(tr, true));
-      else if (tr?.routed && tr.done) to.append(routedTag(tr));
-      if (tr?.upstream && tr.done) to.append(upstreamTag(tr));
     }
     const meta = [];
     if (r.tries.length > 1) meta.push(t("{n} tries", { n: r.tries.length }));
@@ -9997,13 +9990,23 @@ function routingPage(part) {
     // none for one that failed or whose speed can't be told
     const speed = rowSpeed(r, how);
     if (speed) meta.push(speed.text);
-    // where it went and its totals share a line, and the totals, longer
-    // with the speed, go under it, at the right, when both don't fit: the
-    // panel is narrow, and neither the "served …" mark nor the speed is cut
+    if (r.done) {
+      const { prompt, read } = promptOf(r);
+      if (prompt) meta.push(t("Cache") + " " + hitPct(read / prompt));
+      const charges = r.tries.map((attempt) => attempt.billedUSD).filter(Number.isFinite);
+      const amount = charges.reduce((total, charge) => total + charge, 0);
+      const credits = routeCredits([r]);
+      if (charges.length && Number.isFinite(amount)) {
+        const price = amount > 0 && amount < 1e-99 ? "$" + amount.toExponential(2) : fmtCost({ cost: amount }, routeProvider(r));
+        meta.push(t("Reported charge") + " " + price);
+      }
+      if (credits) meta.push(credits);
+    }
     const line = el("span", "pr-line");
     line.append(to, el("span", "meta", meta.join(" · ")));
     b.append(asked, when, line);
-    b.title = reqTitle(r, how, tr);
+    const modelNote = tr?.done ? (tr.swapped ? swapWhy(tr) : tr.routed ? routedWhy(tr) : "") : "";
+    b.title = [reqTitle(r, how, tr), modelNote, tr?.done && tr.upstream ? upstreamWhy(tr) : ""].filter(Boolean).join("\n");
     b.onclick = (e) => { api("window/main?view=routing&req=" + r.id, {}); e.currentTarget.blur(); };
     return b;
   }

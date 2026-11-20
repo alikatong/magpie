@@ -539,7 +539,8 @@ type Try struct {
 	Wire string `json:"wire,omitempty"`
 	// Upstream: the provider an aggregator said answered behind it
 	// (OpenRouter's DeepInfra, Novita …)
-	Upstream string `json:"upstream,omitempty"`
+	Upstream  string   `json:"upstream,omitempty"`
+	BilledUSD *float64 `json:"billedUSD,omitempty"`
 	// Pin: the upstream the try asked the Cline API to serve it from
 	// (provider.ClinePassAsked), "" when it asked for none
 	Pin string `json:"pin,omitempty"`

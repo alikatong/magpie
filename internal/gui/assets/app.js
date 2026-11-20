@@ -23743,6 +23743,7 @@ $("#sync").onclick = async () => {
 };
 $("#open").onclick = () => api("window/main", {});
 $("#openMain").onclick = () => api("window/main", {});
+$("#panelRequests").onclick = () => api("window/main?view=usage&tab=requests", {});
 // the app says which edge of the placed panel is nearest the tray
 // (panelside.go); that edge alone opens the main window
 window.magpiePanelOpenAt = (side) => {

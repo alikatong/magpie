@@ -589,7 +589,8 @@ type Usage struct {
 	// Credits is what the reply said the request cost in its plan's own
 	// credits, nil when it said none: WorkBuddy's usage.credit, the
 	// figure its app shows on each reply as "Credits Consumed" (#2512)
-	Credits *float64 `json:"credits,omitempty"`
+	Credits   *float64 `json:"credits,omitempty"`
+	billedUSD *float64
 	// advised is what the reply says its server-side advisor's calls cost
 	// (Anthropic's usage.iterations, advisor_message entries): billed at
 	// the advisor model's rates and never in the counts above, so each is

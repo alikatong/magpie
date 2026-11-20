@@ -4803,7 +4803,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		}
 		ended = time.Now()
 		try := Try{ID: c.rest, Model: c.model, Effort: wentAt, Picked: picked, Fixed: fixed, RuleEffort: ruled, MappedFrom: mappedFrom, Fast: fast, Start: began, Done: true, Status: call.Status, Millis: ended.Sub(began).Milliseconds(), Error: call.Error, Queued: queued,
-			Served: call.Usage.Served, Upstream: call.Usage.Upstream, Pin: c.p.ClinePassAsked(c.model), Tier: wentTier, TierServed: call.Usage.Tier, Auto: autoPicked(),
+			Served: call.Usage.Served, Upstream: call.Usage.Upstream, BilledUSD: call.Usage.billedUSD, Pin: c.p.ClinePassAsked(c.model), Tier: wentTier, TierServed: call.Usage.Tier, Auto: autoPicked(),
 			Net: nt.timing(began, queued), SentBy: sentBy(c.p)}
 		if resetFirst != nil {
 			// the reset spent for it before it was asked
@@ -7865,7 +7865,12 @@ func (s *Server) passthrough(w http.ResponseWriter, r *http.Request, p provider.
 	}
 	f, _ := w.(http.Flusher)
 	sniff := newSniffer(proto, res.Header.Get("Content-Type"))
-	defer func() { u.add(sniff.usage().advisedAs(advisor)) }()
+	sniff.openRouter = openRouterReply(res)
+	defer func() {
+		used := sniff.usage()
+		u.addChargeUSD(used.billedUSD)
+		u.add(used.advisedAs(advisor))
+	}()
 	var tidy *chatTidy
 	if proto == provider.Chat && sse {
 		tidy = &chatTidy{}
@@ -9883,13 +9888,19 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 		spent = spent || spends(ev)
 		col.add(ev)
 	}))
+	openRouter := openRouterReply(res)
+	var billedUSD *float64
 	err = readSSE(rd, func(_, data string) error {
 		tail.see([]byte(data))
 		found.see(actual, []byte(data))
+		if charge := upstreamChargeUSD([]byte(data), actual, openRouter); charge != nil {
+			billedUSD = charge
+		}
 		u.add(Usage{Upstream: upstreamOf([]byte(data)), Tier: upstreamTier([]byte(data)), searches: found.count()})
 		ended = ended || replyEnds(actual, data, upstreamStop([]byte(data)))
 		return dec(data, see)
 	})
+	u.addChargeUSD(billedUSD)
 	// a Chat reply that carried nothing at all and no finish_reason, but
 	// counted its usage, is an empty one (chatTail.void), not one whose
 	// end alone was lost; one with no usage either is still a cut

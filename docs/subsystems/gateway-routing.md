@@ -1710,6 +1710,16 @@ had, was left out: the read-only key already reads more than this feed
 [`route_events_test.go`](../../internal/gateway/route_events_test.go), and
 `TestReadOnlyKeyEveryRoute`.
 
+Completed routing tries can keep a `billedUSD` amount in the live trace
+and history. `upstreamChargeUSD` in
+[`upstream.go`](../../internal/gateway/upstream.go) reads a numeric
+`usage.cost` from OpenRouter's Chat and Responses replies or from
+compatible replies that explicitly give `usage.currency` as `USD`.
+Responses streams carry it on the terminal reply. An explicit zero is
+kept. The field sums reported amounts if the gateway makes more than one
+upstream call within the try. Model-price estimates in the ledger are
+independent of this field.
+
 ### A reply's progress while it is out
 
 A long or reasoning reply otherwise looks stuck on the Routing page (#4951,

@@ -3,9 +3,8 @@
 // accounts' allowances while the window's 用量 is per-request usage and 路由
 // the gateway's routing): the gateway's latest requests, newest first, from
 // the trace the Routing page plays — the agent, the model asked for, the
-// provider and account it went to, the model that answered with the amber
-// "served …" mark on one a vendor answered with another, how it ended and
-// when — under today's calls and tokens. The allowances' tab is named so.
+// channel it went to, how it ended and when — under today's calls and tokens.
+// The allowances' tab is named so.
 // A click opens the window's Routing page on that request and leaves the
 // panel where it is; the window opened so has that request picked. Over the
 // list a small stage (#feedback: 这个页面有点乱…迷你版的路由动画): the agents
@@ -29,13 +28,14 @@ const routes = [
   { id: 101, seq: 101, time: at(6), agent: "codex", model: "relay/gpt-6-sol", provider: "relay", order: [relay],
     tries: [{ id: relay.id, model: "gpt-6-sol", start: at(6), done: true, status: 429, ms: 300, fail: "rate" }], done: true, status: 429, ms: 300 },
   { id: 103, seq: 103, time: at(1), agent: "codex", model: "relay/gpt-6-sol", provider: "relay", order: [relay],
-    tries: [ok(relay, 1, { served: "gpt-6-luna", swapped: true })], done: true, status: 200, ms: 1500, tokens: 12400, served: "gpt-6-luna", swapped: true,
+    tries: [ok(relay, 1, { served: "gpt-6-luna", swapped: true, billedUSD: 0.001 })], done: true, status: 200, ms: 1500, tokens: 12400, served: "gpt-6-luna", swapped: true,
     // it wrote 2,000 tokens in the 1.2 s after its first, at 1,667 tok/s
-    out: 2000, ttft: 300 },
+    out: 2000, ttft: 300, usage: [{ in: 2400, out: 2000, cache_read: 6240, cache_write: 1760 }] },
   { id: 100, seq: 100, time: at(9), agent: "claude", model: "claude/claude-opus-5", provider: "claude", order: [claude],
-    tries: [ok(claude, 9, { served: "claude-opus-5-20260901" })], done: true, status: 200, ms: 1500, tokens: 800 },
+    tries: [ok(claude, 9, { served: "claude-opus-5-20260901" })], done: true, status: 200, ms: 1500, tokens: 800,
+    cost: 0.85, priced: true, usage: [{ in: 700, out: 100, cache_unknown: true }] },
   { id: 102, seq: 102, time: at(3), agent: "claude", model: "claude/claude-opus-5", provider: "claude", order: [claude],
-    tries: [ok(claude, 3)], done: true, status: 200, ms: 1500, tokens: 3000 },
+    tries: [ok(claude, 3, { billedUSD: 0 })], done: true, status: 200, ms: 1500, tokens: 3000, usage: [{ in: 2800, out: 200 }] },
 ];
 
 function serve(lang, opened, live) {
@@ -71,8 +71,8 @@ function serve(lang, opened, live) {
 }
 
 const want = {
-  en: { speed: "1667 tok/s", tab: "Routing", quota: "Allowances", swap: "served gpt-6-luna", today: /today\s*42\s*calls\s*·\s*1\.2M\s*tokens/, fail: /429 · rate limited/, open: "Open Routing", story: /How the request at/ },
-  zh: { speed: "1667 token/秒", tab: "路由", quota: "额度", swap: "实际 gpt-6-luna", today: /今天\s*42\s*次调用\s*·\s*1\.2M\s*token/, fail: /429 · 限流/, open: "打开路由", story: /的请求是怎么路由的/ },
+  en: { speed: "1667 tok/s", tab: "Routing", quota: "Allowances", charge: "Reported charge", today: /today\s*42\s*calls\s*·\s*1\.2M\s*tokens/, fail: /429 · rate limited/, open: "Open Routing", story: /How the request at/ },
+  zh: { speed: "1667 token/秒", tab: "路由", quota: "额度", charge: "实际扣费", today: /今天\s*42\s*次调用\s*·\s*1\.2M\s*token/, fail: /429 · 限流/, open: "打开路由", story: /的请求是怎么路由的/ },
 };
 
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
@@ -102,6 +102,8 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const opened = [];
       const page = await open("http://magpie.test/?mode=panel", { width: 440, height: 300 }, opened);
       const tab = page.locator('[data-ptab="routing"]');
+      const details = page.locator("#panelRequests");
+      assert.equal(await details.isVisible(), false);
       assert.equal((await tab.textContent()).trim(), want[lang].tab);
       assert.equal((await page.locator('[data-ptab="usage"]').textContent()).trim(), want[lang].quota, "the allowances' tab says what it shows");
       await tab.click();
@@ -109,32 +111,26 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(await page.locator("#panelRouting").isVisible());
       assert(!(await page.locator("#agents").isVisible()), "the agents are another tab");
 
-      // newest first: the agent, the model asked, where it went, the mark
       const rows = await page.locator(".pr-req").evaluateAll((rs) => rs.map((r) => ({
         who: r.querySelector(".pr-who").textContent, model: r.querySelector(".pr-a .m").textContent,
-        where: r.querySelector(".pr-where").textContent, served: r.querySelector(".pr-m")?.textContent || "",
-        swap: r.querySelector(".swap")?.textContent || "", cls: r.className, at: r.querySelector(".at").textContent,
+        where: r.querySelector(".pr-to").textContent, title: r.title, cls: r.className, at: r.querySelector(".at").textContent,
         meta: r.querySelector(".meta").textContent,
       })));
       // a finished row tells how fast it wrote, as the Routing page's does
       // (#2050); one that failed or tells no speed doesn't
       assert.deepEqual(rows.map((r) => r.meta.includes(want[lang].speed)), [true, false, false, false], JSON.stringify(rows.map((r) => r.meta)));
+      const cache = lang === "zh" ? /缓存 ([\d.]+%)/ : /Cache ([\d.]+%)/;
+      assert.deepEqual(rows.map(({ meta }) => meta.match(cache)?.[1]), ["60.00%", "0.00%", undefined, undefined]);
       assert.deepEqual(rows.map((r) => r.model), ["relay/gpt-6-sol", "claude/claude-opus-5", "relay/gpt-6-sol", "claude/claude-opus-5"]);
       assert.deepEqual(rows.map((r) => r.who), ["Codex", "Claude Code", "Codex", "Claude Code"]);
-      assert.equal(rows[0].where, "Relay · team");
-      assert.equal(rows[0].served, "gpt-6-sol");
-      assert.equal(rows[1].where, "Claude · ann@example.com");
-      assert.deepEqual(rows.map((r) => r.swap), [want[lang].swap, "", "", ""], "only the request answered by another model is marked, not a dated name");
+      assert.equal(rows[0].where, "→Relay");
+      assert.equal(rows[1].where, "→Claude");
+      assert.match(rows[0].title, /gpt-6-luna/);
+      const charge = want[lang].charge;
+      assert.deepEqual(rows.map((r) => r.meta.split(" · ").find((metric) => metric.startsWith(charge))), [charge + " $0.001", charge + " $0.000", undefined, undefined]);
       assert.match(rows[2].where, want[lang].fail);
       assert.match(rows[2].cls, /\bbad\b/);
       for (const r of rows) assert.match(r.at, /\d{1,2}:\d{2}:\d{2}/);
-      const mark = await page.locator(".pr-req .swap").evaluate((e) => {
-        const row = e.closest(".pr-req").getBoundingClientRect(), b = e.getBoundingClientRect(), cs = getComputedStyle(e);
-        return { inRow: b.left >= row.left && b.right <= row.right + 0.5 && b.width > 0, full: e.clientWidth >= e.scrollWidth, border: cs.borderLeftWidth, colour: cs.color, bg: cs.backgroundColor };
-      });
-      assert(mark.inRow && mark.full, JSON.stringify(mark));
-      assert.equal(mark.border, "0px", "no border stripe");
-      assert.notEqual(mark.bg, "rgba(0, 0, 0, 0)");
       // no row runs out of the panel
       const over = await page.locator(".pr-req").evaluateAll((rs) => rs.filter((r) => r.scrollWidth > r.clientWidth + 1).length);
       assert.equal(over, 0);
@@ -191,6 +187,17 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.waitForTimeout(200);
       assert.equal(await v.evaluate((e) => e.scrollTop), 0);
       assert.deepEqual(opened, ["?view=routing&req=100", "?view=routing"]);
+
+      assert.equal((await details.textContent()).trim(), lang === "zh" ? "请求详情" : "Request details");
+      const entry = await details.boundingBox(), quit = await page.locator("#quit").boundingBox();
+      assert(entry && quit && entry.x + entry.width <= quit.x);
+      assert(Math.abs(entry.y + entry.height / 2 - quit.y - quit.height / 2) < 1);
+      await details.click();
+      assert.equal(opened.at(-1), "?view=usage&tab=requests");
+      const usage = await open("http://magpie.test/" + opened.at(-1), { width: 1100, height: 760 }, []);
+      await usage.locator("#view-usage #ledgerPane").waitFor();
+      assert.equal(await usage.locator('#usageTab [data-seg="requests"].on').count(), 1);
+      assert.equal(await usage.locator("#panelRequests").isVisible(), false);
 
       // the window opened so: that request picked, its story told, and the
       // address no longer asking for it

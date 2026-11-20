@@ -122,6 +122,87 @@ func TestUpstreamRecorded(t *testing.T) {
 	}
 }
 
+func TestUpstreamChargeOnRoute(t *testing.T) {
+	for _, mode := range []struct {
+		name, endpoint, request string
+		stream                  bool
+	}{
+		{"relayed JSON", "/v1/chat/completions", `"messages":[{"role":"user","content":"hi"}]`, false},
+		{"relayed stream", "/v1/chat/completions", `"messages":[{"role":"user","content":"hi"}]`, true},
+		{"translated JSON", "/v1/messages", `"max_tokens":32,"messages":[{"role":"user","content":"hi"}]`, false},
+		{"translated stream", "/v1/messages", `"max_tokens":32,"messages":[{"role":"user","content":"hi"}]`, true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			fresh(t)
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				const counts = `"prompt_tokens":194,"completion_tokens":2,"total_tokens":196,"currency":"USD","cost":0.00095`
+				if !strings.Contains(string(body), `"stream":true`) {
+					w.Header().Set("Content-Type", "application/json")
+					io.WriteString(w, `{"id":"gen-1","object":"chat.completion","model":"sol","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{`+counts+`}}`)
+					return
+				}
+				w.Header().Set("Content-Type", "text/event-stream")
+				io.WriteString(w, "data: "+`{"id":"gen-1","model":"sol","choices":[{"index":0,"delta":{"role":"assistant","content":"hi"}}]}`+"\n\n")
+				for range 2 {
+					io.WriteString(w, "data: "+`{"id":"gen-1","model":"sol","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{`+counts+`}}`+"\n\n")
+				}
+				io.WriteString(w, "data: [DONE]\n\n")
+			}))
+			t.Cleanup(up.Close)
+			if err := provider.Save(provider.Provider{ID: "fake", Name: "Fake", Key: "k", Chat: up.URL + "/v1", Models: []string{"sol"}}); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"model":"fake/sol",` + mode.request
+			if mode.stream {
+				body += `,"stream":true`
+			}
+			server, reply := New(), httptest.NewRecorder()
+			server.Handler().ServeHTTP(reply, httptest.NewRequest("POST", mode.endpoint, strings.NewReader(body+"}")))
+			if reply.Code != 200 || !strings.Contains(reply.Body.String(), "hi") {
+				t.Fatalf("%d %s", reply.Code, reply.Body)
+			}
+			route := lastRoute(server)
+			saveRoute(route)
+			_, kept, _ := History(route.Time.Local().Format(dayForm))
+			if len(kept) != 1 || kept[0].ID != route.ID {
+				t.Fatalf("route %d missing from history", route.ID)
+			}
+			for _, row := range []Route{route, kept[0]} {
+				if len(row.Tries) != 1 || row.Tries[0].BilledUSD == nil || *row.Tries[0].BilledUSD != 0.00095 {
+					t.Fatalf("reported charge missing or incorrect: %+v", row.Tries)
+				}
+			}
+		})
+	}
+}
+
+func TestUpstreamChargeCurrency(t *testing.T) {
+	for _, check := range []struct {
+		name, body string
+		proto      provider.Protocol
+		openRouter bool
+		valid      bool
+	}{
+		{"OpenRouter Chat", `{"usage":{"cost":0,"cost_details":{"upstream_inference_cost":1.5}}}`, provider.Chat, true, true},
+		{"OpenRouter Responses", `{"type":"response.completed","response":{"usage":{"cost":0}}}`, provider.Responses, true, true},
+		{"custom currency", `{"usage":{"cost":0,"currency":"USD"}}`, provider.Chat, false, true},
+		{"unknown currency", `{"usage":{"cost":0}}`, provider.Chat, false, false},
+		{"other currency", `{"usage":{"cost":0,"currency":"CNY"}}`, provider.Chat, true, false},
+		{"missing amount", `{"usage":{"cost_details":{"upstream_inference_cost":1.5}}}`, provider.Chat, true, false},
+		{"continuing response", `{"type":"response.in_progress","response":{"usage":{"cost":0}}}`, provider.Responses, true, false},
+		{"nonfinite amount", `{"usage":{"cost":1e999}}`, provider.Chat, true, false},
+		{"malformed usage", `{"usage":{"cost":0}`, provider.Chat, true, false},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			got := upstreamChargeUSD([]byte(check.body), check.proto, check.openRouter)
+			if (got != nil) != check.valid || got != nil && *got != 0 {
+				t.Fatalf("cost = %v, want a reported zero: %v", got, check.valid)
+			}
+		})
+	}
+}
+
 // Only a name is an upstream: a reply without one, or one echoing a
 // request's provider options (an object), says none.
 func TestUpstreamOf(t *testing.T) {

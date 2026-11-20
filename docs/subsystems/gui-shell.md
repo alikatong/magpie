@@ -391,6 +391,16 @@ Usage page's Overview (`window.openUsageOverview` in
 `plugins/usage/page.js`), where each account's card says it all, without
 keeping that tab as the reader's own. See `routing-acts-compact.test.cjs`.
 
+The tray panel's Routing tab shows the destination channel name alongside
+the request metrics. The model the client asked for remains in the row's
+heading, with the routing details available by opening the request.
+`panelRow` uses the main Routing page's `promptOf` to calculate cache hit
+rate, including cache writes in the denominator and leaving out usage
+whose cache counts are unknown. Completed requests display any reported
+USD charges or plan credits. Estimated costs are available in the main
+Routing page. The panel's footer opens Usage → Requests from its Request
+details button. See `panel-routing.test.cjs`.
+
 ### A provider's accounts together
 
 A Usage card of several accounts (not a card of keys, which has its sum)

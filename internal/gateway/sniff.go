@@ -12,12 +12,13 @@ import (
 // copied to the client untouched. Streams are read line by line as they
 // pass; a plain JSON body is kept and parsed at the end.
 type usageSniffer struct {
-	proto provider.Protocol
-	sse   bool
-	buf   []byte
-	data  []byte // SSE data lines of the event in progress
-	over  bool   // the JSON body outgrew the cap; give up on it
-	u     Usage
+	proto      provider.Protocol
+	sse        bool
+	buf        []byte
+	data       []byte // SSE data lines of the event in progress
+	over       bool   // the JSON body outgrew the cap; give up on it
+	u          Usage
+	openRouter bool
 	// served: the model the reply says answered it, the last it named
 	served string
 	// ended: the stream's last event went by (message_stop, [DONE],
@@ -156,6 +157,9 @@ func (s *usageSniffer) parse(b []byte) {
 	}
 	if t := upstreamTier(b); t != "" {
 		s.u.Tier = t
+	}
+	if charge := upstreamChargeUSD(b, s.proto, s.openRouter); charge != nil {
+		s.u.billedUSD = charge
 	}
 	switch s.proto {
 	case provider.Gemini:

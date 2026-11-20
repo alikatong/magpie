@@ -4,10 +4,65 @@ import (
 	"bytes"
 	"cmp"
 	"encoding/json"
+	"math"
+	"net/http"
 	"strings"
 
+	"github.com/tidwall/gjson"
 	"github.com/yetone/magpie/internal/provider"
 )
+
+func upstreamChargeUSD(body []byte, proto provider.Protocol, openRouter bool) *float64 {
+	if !bodyHas(body, `"cost"`) {
+		return nil
+	}
+	path := "usage"
+	switch proto {
+	case provider.Chat:
+	case provider.Responses:
+		if kind := gjson.GetBytes(body, "type").String(); kind != "" {
+			if kind != "response.completed" && kind != "response.incomplete" {
+				return nil
+			}
+			path = "response.usage"
+		}
+	case provider.Anthropic:
+		openRouter = false
+	default:
+		return nil
+	}
+	if !json.Valid(body) {
+		return nil
+	}
+	fields := gjson.GetBytes(body, path)
+	unit := fields.Get("currency")
+	if unit.String() != "USD" && !(openRouter && !unit.Exists()) {
+		return nil
+	}
+	cost := fields.Get("cost")
+	if cost.Type != gjson.Number || cost.Num < 0 || math.IsNaN(cost.Num) || math.IsInf(cost.Num, 0) {
+		return nil
+	}
+	return &cost.Num
+}
+
+func openRouterReply(res *http.Response) bool {
+	return res.Request != nil && res.Request.URL != nil && strings.EqualFold(res.Request.URL.Hostname(), "openrouter.ai")
+}
+
+func (u *Usage) addChargeUSD(charge *float64) {
+	if charge == nil {
+		return
+	}
+	if u.billedUSD == nil {
+		u.billedUSD = charge
+		return
+	}
+	total := *u.billedUSD + *charge
+	if !math.IsInf(total, 0) {
+		u.billedUSD = &total
+	}
+}
 
 // upstreamOf is the provider an aggregator's reply (a JSON body, or one
 // event of its stream) says answered behind it, "" when it says none.

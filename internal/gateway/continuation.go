@@ -680,6 +680,8 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 				ended := false // the upstream said its reply ended
 				var tail chatTail
 				var found searchTally // the searches it ran by itself
+				openRouter := openRouterReply(res)
+				var billedUSD *float64
 				// the client is kept alive while the upstream says
 				// nothing at all, its first event yet to come too: the
 				// upstream's 200 is in, and a holdWriter holds what is
@@ -696,6 +698,9 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 					heard()
 					tail.see([]byte(data))
 					found.see(actual, []byte(data))
+					if charge := upstreamChargeUSD([]byte(data), actual, openRouter); charge != nil {
+						billedUSD = charge
+					}
 					st := upstreamStop([]byte(data))
 					u.add(Usage{Upstream: upstreamOf([]byte(data)), Stop: st, Tier: upstreamTier([]byte(data)), searches: found.count()})
 					ended = ended || replyEnds(actual, data, st)
@@ -718,6 +723,7 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 					alive()
 				})
 				stopKeep()
+				u.addChargeUSD(billedUSD)
 				res.Body.Close()
 				if errors.Is(serr, errStreamCut) || errors.Is(serr, errDoneSaid) {
 					// a cut's error event is in hand; a [DONE] said

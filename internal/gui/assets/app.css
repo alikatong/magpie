@@ -261,6 +261,7 @@ body.window :is(#open, #openMain, #quit),
    (panelside.go): the header's icon, or the foot's button left of Quit */
 body.panel[data-open-at="foot"] .top #open,
 body:not([data-open-at="foot"]) #openMain,
+body:not(.panel[data-ptab="routing"]) #panelRequests,
 body:not(.window.linux) #winclose { display: none; }
 /* Linux: the header is the title bar, so it closes the window too — round,
    as GNOME draws its close button, and set a little apart from the icons */
