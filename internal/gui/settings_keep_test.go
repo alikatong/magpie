@@ -116,6 +116,7 @@ func TestSettingsSaveKeepsWhatItDoesNotSend(t *testing.T) {
 		DisabledModels:       []string{"*fable*", "p/m"},
 		PickedModels:         map[string][]string{"opencode": {"p/m"}},
 		OwnModelsHidden:      []string{"dsh"},
+		PicksJoin:            []string{"opencode"},
 		OrderedModels:        map[string][]string{"codex": {"group/g", "p/n"}},
 		FastPicks:            map[string][]string{"codex": {"p/n"}},
 		UltraPicks:           map[string][]string{"codex": {"p/n"}},
@@ -233,6 +234,7 @@ func TestSettingsSaveKeepsWhatItDoesNotSend(t *testing.T) {
 	was.SearcherThen = []string{"fake/m1", "fake/m2"} // set in its own row
 	was.RouterNote = "Los Angeles"                    // the Library's servers/hub-note
 	was.RouterAllTools = true                         // the Library's servers/hub-tools
+	was.RouterNoCode = true                           // the Library's servers/hub-code
 	was.BusyLoad = 150                                // the Routing page's busy-load
 	was.MTLS = true                                   // Network and sharing's settings/mtls
 	was.Wallpaper = 1700000000000                     // Settings > General's Background image, appearance/wallpaper

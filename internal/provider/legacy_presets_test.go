@@ -10,7 +10,7 @@ import (
 func TestLegacyPartnerPreset(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "partners.json")
 	data := `{"seen": {
-		"acme": {"id":"acme","name":"Acme","kind":"partner","sponsored":true,"noKey":true,"decide":"x","chat":"https://acme.example/v1","catalog":"acme","regions":[{"id":"global","chat":"https://global.acme.example/v1","decide":"x"}]},
+		"acme": {"id":"acme","name":"Acme","kind":"partner","sponsored":true,"noKey":true,"decide":"x","chat":"https://acme.example/v1","anthropic":"https://acme.example","searches":true,"catalog":"acme","regions":[{"id":"global","chat":"https://global.acme.example/v1","decide":"x"}]},
 		"regional": {"id":"regional","name":"Regional","regions":[{"id":"global","chat":"https://regional.example/v1","catalog":"region"}]},
 		"plug": {"id":"plug","name":"Plugin","chat":"https://plug.example/v1","plugin":"sample-plugin"},
 		"unsafe": {"id":"unsafe","name":"Unsafe","chat":"http://unsafe.example/v1"},
@@ -33,5 +33,16 @@ func TestLegacyPartnerPreset(t *testing.T) {
 	}
 	if slices.ContainsFunc(Presets(), func(preset PresetDef) bool { return preset.Kind == KindPartner }) {
 		t.Fatal("legacy partners are listed as new provider presets")
+	}
+	original := legacyPresets
+	legacyPresets = func() map[string]*PresetDef { return kept }
+	t.Cleanup(func() { legacyPresets = original })
+	saved := Provider{Preset: "acme", Anthropic: "https://acme.example"}
+	if !PresetSearches(saved) {
+		t.Fatal("the cached preset's search capability was lost")
+	}
+	saved.Anthropic = "https://elsewhere.example"
+	if PresetSearches(saved) {
+		t.Fatal("the cached preset's search capability followed to a different host")
 	}
 }

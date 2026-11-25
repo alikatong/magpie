@@ -39,7 +39,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         page.on("pageerror", (error) => errors.push(error.message));
         page.on("request", (request) => {
           const pathname = new URL(request.url()).pathname;
-          if (pathname === "/api/partner" || pathname === "/pluginpartners.js") promotionRequests.push(pathname);
+          if (["/api/partner", "/api/page", "/pluginpartners.js"].includes(pathname)) promotionRequests.push(pathname);
         });
         try {
           await page.route("**/*", serve(lang));
