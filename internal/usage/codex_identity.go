@@ -750,12 +750,28 @@ func matchingRecords(since time.Time, logs []sessions.Call) []Record {
 	delete(requests, "")
 	delete(sessionIDs, "")
 	var out []Record
-	Visit(since, func(r Record) {
-		if responses[r.ResponseID] || requests[r.RequestID] || sessionIDs[r.NativeSession] || sessionIDs[r.Session] ||
-			agy && agyGateway(ReportedAs(r.Agent)) {
-			out = append(out, r)
+	rows := lentRows()
+	defer rows.release()
+	for _, block := range readLogSnapshot().blocks {
+		if !since.IsZero() && block.Latest.Before(since) {
+			continue
 		}
-	})
+		chunk := rows.of(block)
+		for index := range chunk.Rows {
+			if chunk.Rows[index].Time().Before(since) {
+				continue
+			}
+			row := chunk.row(index)
+			if responses[row.ResponseID] || requests[row.RequestID] || sessionIDs[row.NativeSession] || sessionIDs[row.Session] ||
+				agy && agyGateway(ReportedAs(row.Agent)) {
+				record := row.Record
+				if len(block.Archive) != 0 {
+					record = row.ownedRecord()
+				}
+				out = append(out, record)
+			}
+		}
+	}
 	return out
 }
 

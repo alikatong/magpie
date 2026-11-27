@@ -409,12 +409,16 @@ func (s *logSnapshot) visitSessions(since time.Time, sessions []string, fn func(
 			if named && !slices.Contains(sessions, r.Session) && !slices.Contains(sessions, r.NativeSession) {
 				continue
 			}
-			for _, str := range rowText(&r) {
-				*str = strings.Clone(*str)
-			}
-			fn(r.Record)
+			fn(r.ownedRecord())
 		}
 	}
+}
+
+func (r Row) ownedRecord() Record {
+	for _, str := range rowText(&r) {
+		*str = strings.Clone(*str)
+	}
+	return r.Record
 }
 
 // blockSessions are the sessions each packed block's rows name, by

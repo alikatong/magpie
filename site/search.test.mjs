@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { LANGS, build, page } from "./search-index.mjs";
 import { SUMS, sums } from "./docs-index.mjs";
 
@@ -91,9 +92,9 @@ test("search: node search-index.mjs, llms-full.mjs and docs-index.mjs each write
   const { cp, mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const site = new URL("./", import.meta.url).pathname;
+  const site = fileURLToPath(new URL("./", import.meta.url));
   for (const script of ["search-index.mjs", "llms-full.mjs", "docs-index.mjs"]) {
-    const dir = await mkdtemp(join(tmpdir(), "site-index-"));
+    const dir = await mkdtemp(join(tmpdir(), "site index-"));
     try {
       for (const f of ["search-index.mjs", "llms-full.mjs", "docs-index.mjs"]) await cp(join(site, f), join(dir, f));
       await cp(join(site, "public/llms.txt"), join(dir, "public/llms.txt"));

@@ -2782,7 +2782,7 @@ func buildRequestBlocksIn(p Period, f Filter, offset, limit int, now time.Time, 
 	slices.Sort(out.Purposes)
 	out.CallerKeys = callerGroups(callers)
 	out.Accounts = callerGroups(accounts)
-	out.Speeds, out.ProviderSpeeds = speeds.result(), speeds.providers()
+	out.Speeds, out.ProviderSpeeds = speeds.rankings()
 	for _, d := range Dimensions {
 		out.By[d] = sharesOf(groups[d])
 	}
@@ -2910,7 +2910,7 @@ func pageFromLedgerAt(p Period, f Filter, offset, limit int, all Ledgered, now t
 			out.Big.add(&r)
 		}
 	}
-	out.Speeds, out.ProviderSpeeds = speeds.result(), speeds.providers()
+	out.Speeds, out.ProviderSpeeds = speeds.rankings()
 	chartRows := l.Rows
 	if f.Day != "" {
 		chartFilter := f

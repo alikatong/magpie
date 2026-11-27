@@ -331,16 +331,16 @@ func (s speedRank) result() []ModelSpeed {
 	return out
 }
 
-// providers is each model on each provider it was tried on, a model's
-// fastest provider first, and the models in the order of result.
-func (s speedRank) providers() []ProviderSpeed {
+// rankings returns the models and their provider rows in the same model order.
+func (s speedRank) rankings() ([]ModelSpeed, []ProviderSpeed) {
+	models := s.result()
 	out := make([]ProviderSpeed, 0, len(s))
 	for k, m := range s {
 		model, prov := rankOf(k)
 		out = append(out, ProviderSpeed{ModelSpeed: m.speedOf(model), Provider: prov, Tries: m.Tries, Failed: m.Failed, Swapped: m.Swapped})
 	}
-	place := map[string]int{}
-	for i, m := range s.result() {
+	place := make(map[string]int, len(models))
+	for i, m := range models {
 		place[m.Model] = i + 1
 	}
 	slices.SortFunc(out, func(a, b ProviderSpeed) int {
@@ -363,7 +363,7 @@ func (s speedRank) providers() []ProviderSpeed {
 		}
 		return strings.Compare(a.Provider, b.Provider)
 	})
-	return out
+	return models, out
 }
 
 // fasterFirst orders a ranking: the fastest first, then the one with

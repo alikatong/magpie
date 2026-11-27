@@ -9,6 +9,19 @@ import (
 // within is a 2% histogram bin's room: a median is the middle of its bin.
 func within(got, want float64) bool { return math.Abs(got-want) <= 0.02*want }
 
+func TestChartPartReusesSpeedBins(t *testing.T) {
+	row := Row{Record: Record{Status: 200, Output: 500, TTFT: 1000, Millis: 11000}}
+	var part Part
+	part.add(row)
+	allocs := testing.AllocsPerRun(100, func() { part.add(row) })
+	if allocs != 0 {
+		t.Errorf("adding a speed in an existing bin allocated %v times per row", allocs)
+	}
+	if part.speeds.total() != part.Calls || !within(part.speeds.median(), 50) {
+		t.Errorf("got %d speeds for %d calls, median %v", part.speeds.total(), part.Calls, part.speeds.median())
+	}
+}
+
 // A sum's speed and floor are the median of its replies' own, not their
 // tokens over their summed time (FallMonkey on X: fable-5-2's ranking row
 // read ≥31 tok/s over 1,034 replies whose own rows mostly read ≥80-105; a

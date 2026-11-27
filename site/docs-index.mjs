@@ -8,6 +8,7 @@
 // stale (five times on main from 11-13 to 11-17).
 import { createHash } from "node:crypto";
 import { readFile, readdir, writeFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { build as llmsFull } from "./llms-full.mjs";
 import { build as searchIndex } from "./search-index.mjs";
 
@@ -36,4 +37,4 @@ export async function writeAll() {
   await writeFile(SUMS, await sums());
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await writeAll();
+if (fileURLToPath(import.meta.url) === process.argv[1]) await writeAll();

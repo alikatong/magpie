@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 	"unsafe"
@@ -99,5 +100,26 @@ func TestCodexModelEffortLetsUnrelatedCallsGo(t *testing.T) {
 	// row for each unrelated call
 	if build > rows {
 		t.Fatalf("a build over %d unrelated calls allocated %d bytes, a packed row each is %d", calls, build, rows)
+	}
+}
+
+func TestMatchingRecordsKeepTextAcrossBlocks(t *testing.T) {
+	now, _ := effortFixture(t)
+	for index := range 2 * logBlockRows {
+		record := Record{Time: now, Agent: "codex", RequestID: fmt.Sprintf("req-%04d", index), Model: fmt.Sprintf("model-%04d", index)}
+		if index == logBlockRows-1 {
+			record.Error = strings.Repeat("x", 4096)
+		}
+		Append(record)
+	}
+	logs := []sessions.Call{{RequestID: "req-0000"}, {RequestID: fmt.Sprintf("req-%04d", logBlockRows)}}
+	got := matchingRecords(now, logs)
+	if len(got) != len(logs) {
+		t.Fatalf("got %d records, want %d", len(got), len(logs))
+	}
+	for index, rec := range got {
+		if rec.RequestID != logs[index].RequestID || rec.Model != fmt.Sprintf("model-%04d", index*logBlockRows) {
+			t.Errorf("match %d: got request %q, model %q", index, rec.RequestID, rec.Model)
+		}
 	}
 }

@@ -481,7 +481,7 @@ func ledgerMatched(since, until time.Time, f Filter, recs []Record, logs []sessi
 	codexIdentities := sessions.CodexIdentities()
 	rows = make([]Row, 0, len(recs)+len(logs))
 	agents, providers = []string{}, []string{}
-	identities := newSessionResolver(logs)
+	var identities *sessionResolver
 	add := func(r Record, pr *catalog.Price, source, actor string) {
 		if a := ReportedAs(r.Agent); !slices.Contains(agents, a) {
 			agents = append(agents, a)
@@ -535,6 +535,9 @@ func ledgerMatched(since, until time.Time, f Filter, recs []Record, logs []sessi
 		actor := codexActor(c)
 		if override, ok := actors[i]; ok {
 			actor = override
+		}
+		if identities == nil {
+			identities = newSessionResolver(logs)
 		}
 		r.SessionAccount = identities.resolve(c)
 		r.SessionOfficialLogin = identities.officialLogin(c, r.SessionAccount)
@@ -1336,7 +1339,7 @@ func (p *Part) add(r Row) {
 		if n, w := r.Decode(); w > 0 {
 			p.DecodeMs += w
 			p.DecodeOut += n
-			p.speeds = p.speeds.plus(speedHist{{rateBin(n, w), 1}})
+			p.speeds.inc(rateBin(n, w), 1)
 		}
 	}
 }

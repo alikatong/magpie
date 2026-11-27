@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, statSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const installer = fileURLToPath(new URL("./public/install.sh", import.meta.url));
@@ -37,9 +37,13 @@ function systemPath(dir) {
   mkdirSync(sys, { recursive: true });
   for (const n of ["sh", "dash", "bash", "sed", "head", "tr", "grep", "cut", "mktemp", "rm", "mkdir", "install", "cat", "sha256sum", "shasum", "ls", "rmdir", "mv", "ln", "chmod", "env", "perl"]) {
     const w = spawnSync("sh", ["-c", `command -v ${n}`], { encoding: "utf8" }).stdout.trim();
-    if (w.startsWith("/")) symlinkSync(w, join(sys, n));
+    if (!w.startsWith("/")) continue;
+    if (process.platform === "win32") {
+      writeFileSync(join(sys, n), `#!/bin/sh\nexec "${w}" "$@"\n`, { mode: 0o755 });
+    } else {
+      symlinkSync(w, join(sys, n));
+    }
   }
-  return sys;
 }
 
 function install(t, { termux = true, arch = "aarch64", override = false, prefixOnly = false, missing = false, corrupt = false, desktop = false, github = false, r2 = false, api = false, args = [], env: extra = {}, tamper = "", libs = desktop, cli = !desktop, distro = "ID=ubuntu\nID_LIKE=debian\n", sessions = [], login = "", tty = false, uid = 1000, sudo = true, pmFails = false, payload = "test binary\n" } = {}) {
@@ -151,7 +155,6 @@ else fs.writeFileSync(args[args.indexOf("-o") + 1], tamper && url.startsWith(tam
     MAGPIE_TTY: tty ? join(dir, "tty") : join(dir, "no-tty"),
     INSTALL_PM_LOG: pmLog,
     INSTALL_PM_FAILS: pmFails ? "1" : "",
-    PATH: tools + ":" + (sudo ? process.env.PATH : systemPath(dir)),
     XDG_CONFIG_HOME: join(dir, "config"),
     XDG_DATA_HOME: join(dir, "share"),
     INSTALL_REQUESTS: requests,
@@ -165,15 +168,18 @@ else fs.writeFileSync(args[args.indexOf("-o") + 1], tamper && url.startsWith(tam
     ...extra,
   };
   if (tty) writeFileSync(join(dir, "tty"), "");
+  if (!sudo) systemPath(dir);
   const read = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
   const run = (args) => {
     rmSync(requests, { force: true });
     rmSync(env.INSTALL_ARGS, { force: true });
-    const result = spawnSync("sh", [installer, ...args], { env, encoding: "utf8" });
+    const setup = sudo ? 'PATH="$PWD/tools:$PATH"' : 'PATH="$PWD/tools:$PWD/sys"';
+    const result = spawnSync("sh", ["-c", `${setup}; exec /bin/sh "$@"`, "sh", installer, ...args], { cwd: dir, env, encoding: "utf8" });
+    if (result.error) throw result.error;
     const calls = read(env.INSTALL_ARGS).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
     return { ...result, requests: read(requests), calls, pm: read(pmLog) };
   };
-  return { ...run(args), run, bin, file, payload, home, env, share: env.XDG_DATA_HOME, config: env.XDG_CONFIG_HOME };
+  return { ...run(args), run, bin, file, payload, home, tools, env, share: env.XDG_DATA_HOME, config: env.XDG_CONFIG_HOME };
 }
 
 test("Termux downloads Android arm64 into PREFIX/bin even with WebKit installed", (t) => {
@@ -381,7 +387,7 @@ test("--uninstall with magpie deleted already downloads one to disconnect the ag
 test("--uninstall with magpie deleted leaves another magpie's agents to it", (t) => {
   const r = installedDesktop(t);
   rmSync(r.exe);
-  const other = join(r.env.PATH.split(":")[0], "magpie");
+  const other = join(r.tools, "magpie");
   writeFileSync(other, fakeMagpie("other: "), { mode: 0o755 });
   const u = r.run(["--uninstall"]);
   assert.equal(u.status, 0, u.stderr);
@@ -414,13 +420,15 @@ test("--uninstall leaves the install when magpie can't disconnect the agents", (
 });
 
 test("--uninstall takes the service and login entry that start this magpie, never another's", (t) => {
+  const shellHome = (fixture) => execFileSync("sh", ["-c", 'printf %s "$HOME"'], { env: fixture.env, encoding: "utf8" });
   const r = installedDesktop(t);
+  const command = `${shellHome(r)}/.local/bin/magpie`;
   const unit = join(r.config, "systemd/user/magpie.service");
   const login = join(r.config, "autostart/magpie.desktop");
   mkdirSync(join(r.config, "systemd/user"), { recursive: true });
   mkdirSync(join(r.config, "autostart"), { recursive: true });
-  writeFileSync(unit, `[Service]\nExecStart="${r.exe}" serve\n`);
-  writeFileSync(login, `[Desktop Entry]\nExec="${r.exe}" --autostart\n`);
+  writeFileSync(unit, `[Service]\nExecStart="${command}" serve\n`);
+  writeFileSync(login, `[Desktop Entry]\nExec="${command}" --autostart\n`);
   const u = r.run(["--uninstall"]);
   assert.equal(u.status, 0, u.stderr);
   assert.equal(existsSync(unit), false);
@@ -429,9 +437,9 @@ test("--uninstall takes the service and login entry that start this magpie, neve
 
   // another magpie's (one still there) are left alone
   const o = installedDesktop(t);
-  const other = join(o.home, "elsewhere/magpie");
+  const other = `${shellHome(o)}/elsewhere/magpie`;
   mkdirSync(join(o.home, "elsewhere"), { recursive: true });
-  writeFileSync(other, "", { mode: 0o755 });
+  writeFileSync(join(o.home, "elsewhere/magpie"), "", { mode: 0o755 });
   mkdirSync(join(o.config, "systemd/user"), { recursive: true });
   mkdirSync(join(o.config, "autostart"), { recursive: true });
   const ounit = join(o.config, "systemd/user/magpie.service");

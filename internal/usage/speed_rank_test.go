@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -15,6 +16,27 @@ import (
 // slow gpt really is). Both ways the page is built rank the same.
 // offBin is true when got is more than 1.5% from want, the histogram's bins.
 func offBin(got, want float64) bool { return math.Abs(got-want) > want*0.015 }
+
+func BenchmarkRequestPageSpeedRankings(b *testing.B) {
+	rank := speedRank{}
+	for model := range 24 {
+		for provider := range 8 {
+			row := Row{Record: Record{Model: strconv.Itoa(model), Provider: strconv.Itoa(provider), Status: 200, Output: 1000}}
+			for sample := range 64 {
+				row.TTFT = int64(100 + 10*sample)
+				row.Millis = row.TTFT + int64(1000+100*sample)
+				rank.add(&row)
+			}
+		}
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		models, providers := rank.rankings()
+		if len(models) != 24 || len(providers) != 24*8 {
+			b.Fatalf("ranked %d models and %d provider rows", len(models), len(providers))
+		}
+	}
+}
 
 func TestModelSpeedRankIsTheMedianOfFairRequests(t *testing.T) {
 	pageHome(t)
@@ -197,7 +219,7 @@ func TestModelSpeedRankByProvider(t *testing.T) {
 	part := addCells(&chunkPart{speeds: a}, &chunkPart{speeds: b})
 	disk := pageDiskPart(pageDiskEntry{Speeds: part.speeds})
 	for name, rank := range map[string]speedRank{"merged": part.speeds, "file": disk.speeds} {
-		if got := rank.providers(); len(got) != 1 || got[0].Tries != 2 || got[0].Failed != 1 || got[0].Swapped != 1 || got[0].Requests != 1 {
+		if _, got := rank.rankings(); len(got) != 1 || got[0].Tries != 2 || got[0].Failed != 1 || got[0].Swapped != 1 || got[0].Requests != 1 {
 			t.Fatalf("%s: %+v", name, got)
 		}
 	}
